@@ -3,11 +3,12 @@ import typing
 import numpy
 import tensorflow
 from sklearn.cluster import DBSCAN
+import pycocotools.mask as mask_utils
 
+import rospy
+import tf
 from visualization_msgs.msg import Marker
-
 from std_msgs.msg import ColorRGBA
-
 from geometry_msgs.msg import (
     Vector3,
     Pose,
@@ -29,11 +30,28 @@ class ColorGenerator:
     def get_color(
         self,
         track_id: int,
-    ) -> np.ndarray:
+    ) -> numpy.ndarray:
 
         color = self.colors[track_id % self.n]
 
         return color
+
+def clastering(pc):
+
+    n_sampling = 500 if len(pc) > 500 else len(pc)
+
+    indexes = numpy.linspace(0, len(pc), n_sampling, dtype=numpy.int32, endpoint=False)
+    points_to_fit = pc[indexes]
+
+    db = DBSCAN(eps=3, min_samples=2).fit(points_to_fit)
+
+    values, counts = numpy.unique(db.labels_, return_counts=True)
+    biggest_subcluster_id = values[numpy.argmax(counts)]
+
+    mask_biggest_subcluster = db.labels_ == biggest_subcluster_id
+    points_of_biggest_subcluster = points_to_fit[mask_biggest_subcluster]
+
+    return points_of_biggest_subcluster
 
 
 def rle_msg_to_mask(rle_msg):
@@ -48,16 +66,16 @@ def rle_msg_to_mask(rle_msg):
 
 
 def config_gpu():
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    gpus = tensorflow.config.experimental.list_physical_devices('GPU')
 
     if gpus:
 
         try:
             # Currently, memory growth needs to be the same across GPUs
             for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
+                tensorflow.config.experimental.set_memory_growth(gpu, True)
 
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            logical_gpus = tensorflow.config.experimental.list_logical_devices('GPU')
             print(len(gpus), 'Physical GPUs,', len(logical_gpus), 'Logical GPUs')
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -71,9 +89,10 @@ def get_rotation_along_y(
     s = numpy.sin(angle)
 
     matrix = [
-        [ c, 0, s, ],
-        [ 0, 1, 0, ],
-        [ -s, 0, c ],
+        [ c, 0, s, 0,],
+        [ 0, 1, 0, 0,],
+        [-s, 0, c, 0,],
+        [ 0, 0, 0, 1,],
     ]
 
     return numpy.array(matrix)
@@ -89,7 +108,7 @@ def sample_one_obj(
     if num_points < num_points_pad:
 
         pad = numpy.zeros(
-            shape = (num_points - num_points, 3),
+            shape = (num_points_pad - num_points, 3),
             dtype = numpy.float32,
         )
 
@@ -113,26 +132,27 @@ def sample_one_obj(
 def get_rotation_angle(
     model,
     points: numpy.ndarray,
-    num_points_pad: int = 500,
+    num_points_pad: int = 512,
     resample_num: int = 10,
 ) -> typing.List[float]:
-        
-    input_data = np.stack(
+
+    input_data = numpy.stack(
         [
             x for x in map(lambda x: sample_one_obj(points, num_points_pad), range(resample_num))
         ],
         axis=0,
     )
+
     pred_val = model.predict(input_data)
     pred_cls = numpy.argmax(pred_val, axis=-1)
     
-    ret = (pred_cls[0]*3+1.5)*np.pi/180.
+    ret = (pred_cls[0]*3+1.5)*numpy.pi/180.
 
     return ret
 
 
 def get_scales(
-    points:  np.ndarray,
+    points:  numpy.ndarray,
 ) -> tuple:
     
     mins = points.min(axis=0)
@@ -144,9 +164,9 @@ def get_scales(
 
 
 def points_to_bbox(
-    points:  np.ndarray,
-    cluster: bool = True,
+    points:  numpy.ndarray,
     model,
+    cluster: bool = True,
 ) -> numpy.ndarray:
     
     if cluster:

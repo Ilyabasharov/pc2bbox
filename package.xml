@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>pc2bbox</name>
+  <name>pc_to_bbox</name>
   <version>0.0.0</version>
   <description>The point cloud to bounding box package</description>
 

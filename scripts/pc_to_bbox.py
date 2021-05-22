@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class PC2BB:
         self,
     ) -> PC2BB:
 
-        rospy.init_node('pc2bbox')
+        rospy.init_node('pc_to_bbox')
 
         self.synchronizer = message_filters.TimeSynchronizer(
             [
@@ -37,9 +37,15 @@ class PC2BB:
 
         self.synchronizer.registerCallback(self.process)
 
-        self.publisher = rospy.Publisher(
+        self.publisher_markers = rospy.Publisher(
             'visualisation',
             MarkerArray,
+            queue_size = 10,
+        )
+
+        self.publisher_clear_pc = rospy.Publisher(
+            'clear_pc',
+            PointCloud2,
             queue_size = 10,
         )
 
@@ -61,7 +67,7 @@ class PC2BB:
         self,
         pc_msg,
         objects_msg,
-    ) -> MarkerArray:
+    ) -> typing.NoReturn:
 
         pc = ros_numpy.point_cloud2.pointcloud2_to_array(
             pc_msg
@@ -72,14 +78,19 @@ class PC2BB:
                  & numpy.isfinite(pc['z'])
 
         markers = []
+        clear_pc = numpy.full_like(pc, numpy.nan)
+
+        print('Message was detected')
 
         for object_msg in objects_msg.objects:
-
+            
             if object_msg.track_id < 1:
                 continue
 
-            obj_mask = utils.rle_msg_to_mask(object_msg.rle).astype(np.bool)
+            obj_mask = utils.rle_msg_to_mask(object_msg.rle).astype(numpy.bool)
             obj_pc = s2u(pc[num_mask & obj_mask][['x', 'y', 'z']])
+
+            clear_pc[obj_mask] = pc[obj_mask]
 
             bbox_center, bbox_scales, bbox_angle = utils.points_to_bbox(
                 model = self.model,
@@ -99,13 +110,19 @@ class PC2BB:
             markers.append(marker)
 
         out_msg = MarkerArray(markers)
+        self.publisher_markers.publish(out_msg)
 
-        self.publisher.publish(out_msg)
+        clear_pc_msg = ros_numpy.point_cloud2.array_to_pointcloud2(
+            cloud_arr = clear_pc,
+            stamp = pc_msg.header.stamp,
+            frame_id = pc_msg.header.frame_id,
+        )
+        self.publisher_clear_pc.publish(clear_pc_msg)
 
 
 def main():
     
-    np.random.seed(100)
+    numpy.random.seed(100)
 
     pc2bb = PC2BB()
     pc2bb.run()
