@@ -1,0 +1,17 @@
+<launch>
+
+  <arg name="model_path" default="/home/docker_solo/dataset" />
+  
+  <arg name="points" default="/depth_registered/points" />
+  <arg name="objects" default="/stereo/objects" />
+  <arg name="markers" default="/pc2bbox/visualisation" />
+
+  <remap from="point_cloud" to="$(arg points)" />
+  <remap from="objects" to="$(arg objects)" />
+  <remap from="visualisation" to="$(arg markers)" />
+
+  <node pkg="pc2bbox" type="pc2bbox.py" name="pc2bbox" output="screen" >
+    <param name="model_path" value="$(arg model_path)" />
+  </node>
+
+</launch>
