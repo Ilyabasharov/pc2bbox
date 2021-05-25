@@ -5,6 +5,7 @@ import tensorflow
 from sklearn.cluster import DBSCAN
 import pycocotools.mask as mask_utils
 
+import cv2
 import rospy
 import tf
 from visualization_msgs.msg import Marker
@@ -43,7 +44,7 @@ def clastering(pc):
     indexes = numpy.linspace(0, len(pc), n_sampling, dtype=numpy.int32, endpoint=False)
     points_to_fit = pc[indexes]
 
-    db = DBSCAN(eps=3, min_samples=2).fit(points_to_fit)
+    db = DBSCAN(eps=0.5, min_samples=2).fit(points_to_fit)
 
     values, counts = numpy.unique(db.labels_, return_counts=True)
     biggest_subcluster_id = values[numpy.argmax(counts)]
@@ -147,6 +148,8 @@ def get_rotation_angle(
     pred_cls = numpy.argmax(pred_val, axis=-1)
     
     ret = (pred_cls[0]*3+1.5)*numpy.pi/180.
+    angle = (pred_cls[0]*3+1.5)
+    print(angle)
 
     return ret
 
@@ -163,6 +166,17 @@ def get_scales(
     return scales
 
 
+def get_rotation_angle_via_cv(
+    points: numpy.ndarray,
+) -> float:
+    
+    _, (w, h), angle = cv2.minAreaRect(points)
+    
+    angle = angle*numpy.pi/180.
+
+    return w, h, angle 
+
+
 def points_to_bbox(
     points:  numpy.ndarray,
     model,
@@ -174,13 +188,20 @@ def points_to_bbox(
         
     center = points.mean(axis=0)
         
-    rotation_angle = get_rotation_angle(
-        model = model,
-        points = points,
+    #rotation_angle = get_rotation_angle(
+        #model = model,
+        #points = points,
+    #)
+
+    w, h, rotation_angle = get_rotation_angle_via_cv(
+        points[..., [2, 0]],
     )
     
     scales = get_scales(points)
-    
+   
+    scales[0] = h
+    scales[2] = w
+
     return center, scales, rotation_angle
 
 
